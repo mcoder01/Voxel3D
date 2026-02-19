@@ -9,83 +9,80 @@ typedef struct {
     int width, height;
     int* pixels;
     float aspect_ratio, fov;
-    Vec* directions;
 } View;
 
-bool in_world(Vec pos, World* world) {
-    return pos.x >= 0 && pos.x < world->width
-        && pos.y >= 0 && pos.y < world->height
-        && pos.z >= 0 && pos.z < world->depth;
+typedef struct {
+    Vec top_left;
+    Vec to_right;
+    Vec to_bottom;
+} RaytraceData;
+
+float min(float a, float b) {
+    return a < b ? a : b;
 }
 
-float axisDistToNextVoxel(float pos, float dir, float eps) {
+float VoxelDistance(float pos, float dir, float eps) {
     if (abs(dir) < eps) return INFINITY;
     float voxel = floor(pos);
     if (dir > 0) voxel++;
     return (voxel-pos)/dir;
 }
 
-float min(float a, float b) {
-    return a < b ? a : b;
+Vec GetDirection(RaytraceData data, int x, int y, View screen) {
+    Vec dir = vec_add(data.top_left, vec_scale(data.to_right, (float) x/(screen.width-1)));
+    return vec_add(dir, vec_scale(data.to_bottom, (float) y/(screen.height-1)));
 }
 
-int raytrace(World* world, Vec dir) {
+Vec Raytrace(World world, Vec dir) {
     const float eps = 0.01;
-    Vec center = {(float) world->width/2, (float) world->height/2, (float) world->depth/2};
-    Vec ray = {0};
-    while(true) {
-        Vec pos = vec_sub(vec_add(ray, center), world->camera.pos);
-        if (!in_world(pos, world)) break;
+    Vec center = {(float) world.width/2, (float) world.height/2, (float) world.depth/2};
+    Vec pos = vec_add(center, world.camera.pos);
+    while(IsInWorld(world, pos)) {
+        Block* block = GetBlockAt(world, pos);
+        if (block->type != BlockType::AIR)
+            return pos;
 
-        int block = world->blocks[(int) pos.x][(int) pos.y][(int) pos.z];
-        if (block != BlockType::AIR) 
-            return block;
-
-        float dist = min(axisDistToNextVoxel(ray.x, dir.x, eps), 2);
-        dist = min(axisDistToNextVoxel(ray.y, dir.y, eps), dist);
-        dist = min(axisDistToNextVoxel(ray.z, dir.z, eps), dist);
-        ray = vec_add(ray, vec_scale(dir, dist+eps));
+        float dist = VoxelDistance(pos.x, dir.x, eps);
+        dist = min(VoxelDistance(pos.y, dir.y, eps), dist);
+        dist = min(VoxelDistance(pos.z, dir.z, eps), dist);
+        pos = vec_add(pos, vec_scale(dir, dist+eps));
     }
 
-    return BlockType::AIR;
+    return pos;
 }
 
-Vec polar_to_cartesian(Vec angles) {
-    Vec v;
-    v.x = cos(angles.y)*cos(angles.x);
-    v.y = cos(angles.y)*sin(angles.x);
-    v.z = sin(angles.y);
-    return v;
+Vec PolarToCartesian(Vec angles) {
+    return {
+        cos(angles.y)*cos(angles.x),
+        cos(angles.y)*sin(angles.x),
+        sin(angles.y)
+    };
 }
 
-void compute_directions(Camera* camera, View* screen) {
-    if (screen->directions == NULL)
-        screen->directions = new Vec[screen->width*screen->height];
+RaytraceData BeginRaytrace(Camera camera, View screen) {
+    Vec forward = PolarToCartesian(camera.view);
+    Vec right = normalize(vec_cross(forward, {0, 0, 1}));
+    Vec up = normalize(vec_cross(right, forward));
 
-    float hfov = screen->fov*screen->aspect_ratio;
-    Vec left = polar_to_cartesian({camera->view.x-screen->fov/2, 0, 0});
-    Vec right = polar_to_cartesian({camera->view.x+screen->fov/2, 0, 0});
-    Vec top = polar_to_cartesian({0, camera->view.y-hfov/2, 0});
-    Vec bottom = polar_to_cartesian({0, camera->view.y+hfov/2, 0});
+    float halfVFov = screen.fov/2;
+    float halfHFov = atan(tan(halfVFov)*screen.aspect_ratio);
+    float halfWidth = tan(halfHFov);
+    float halfHeight = tan(halfVFov);
 
-    Vec to_right = vec_sub(right, left);
-    Vec to_bottom = vec_sub(bottom, top);
-
-    Vec top_left = vec_sub(left, vec_scale(to_bottom, 0.5));
-    for (int y = 0; y < screen->height; y++)
-        for (int x = 0; x < screen->width; x++) {
-            Vec dir = vec_add(top_left, vec_scale(to_right, (float) x/(screen->width-1)));
-            dir = vec_add(dir, vec_scale(to_bottom, (float) y/(screen->height-1)));
-            screen->directions[y*screen->width+x] = normalize(dir);
-        }
+    RaytraceData data;
+    data.top_left = vec_add(forward, vec_scale(right, -halfWidth));
+    data.top_left = vec_add(data.top_left, vec_scale(up, halfHeight));
+    data.to_right = vec_scale(right, halfWidth*2);
+    data.to_bottom = vec_scale(up, -halfHeight*2);
+    return data;
 }
 
-View init_screen(SDL_Surface* surface, float fov) {
+View MakeView(SDL_Surface* surface, float fov) {
     return {
         surface->w, surface->h, 
         (int*) surface->pixels,
-        (float) surface->h/surface->w,
-        fov, NULL
+        (float) surface->w/surface->h,
+        fov
     };
 }
 
