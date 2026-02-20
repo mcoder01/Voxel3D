@@ -2,7 +2,6 @@
 #include "world.hpp"
 #include "raytrace.hpp"
 #include "thread_pool.hpp"
-#include <stdio.h>
 
 #define WIDTH 1280
 #define HEIGHT 720
@@ -15,7 +14,7 @@ void Update(World* world) {
 
     Vec forward = PolarToCartesian(world->camera.view);
     Vec point = Raytrace(*world, forward);
-    if (IsInWorld(*world, point))
+    if (IsInWorld(*world, point)) 
         world->selected = GetBlockAt(*world, point);
 }
 
@@ -69,9 +68,9 @@ void MousePressed(int button, int x, int y, World* world) {
         Vec normal = GetFaceNormal(ray, 0.01);
         Vec pos = vec_add(ray, normal);
         if (IsInWorld(*world, pos))
-            *GetBlockAt(*world, pos) = {BlockType::STONE, 0.03};
+            *GetBlockAt(*world, pos) = Blocks.STONE;
     } else if (button == SDL_BUTTON_LEFT)
-        GetBlockAt(*world, ray)->type = BlockType::AIR;
+        *GetBlockAt(*world, ray) = Blocks.AIR;
 }
 
 int main() {
@@ -82,7 +81,7 @@ int main() {
     for (int i = 0; i < 9; i++)
         for (int j = 0; j < 9; j++)
             for (int k = 3; k < 6; k++)
-                world.blocks[i][j][k] = {BlockType::STONE, 0.03};
+                world.blocks[i][j][k] = Blocks.STONE;
 
     View screen = MakeView(surface, M_PI/3);
     Pool* pool = CreatePool(NUM_THREADS);

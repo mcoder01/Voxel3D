@@ -2,12 +2,11 @@
 #define RAYTRACE_HPP
 
 #include <SDL3\SDL.h>
+#include "texture.hpp"
 #include "geom.hpp"
 #include "world.hpp"
 
-typedef struct {
-    int width, height;
-    int* pixels;
+typedef struct : Image {
     float aspect_ratio, fov;
 } View;
 
@@ -21,11 +20,17 @@ float min(float a, float b) {
     return a < b ? a : b;
 }
 
-float VoxelDistance(float pos, float dir, float eps) {
+float DistanceToNext(float pos, float dir, float eps) {
     if (abs(dir) < eps) return INFINITY;
     float voxel = floor(pos);
     if (dir > 0) voxel++;
     return (voxel-pos)/dir;
+}
+
+float VoxelDistance(Vec pos, Vec dir, float eps) {
+    float dist = DistanceToNext(pos.x, dir.x, eps);
+    dist = min(DistanceToNext(pos.y, dir.y, eps), dist);
+    return min(DistanceToNext(pos.z, dir.z, eps), dist);
 }
 
 Vec GetDirection(RaytraceData data, int x, int y, View screen) {
@@ -36,19 +41,17 @@ Vec GetDirection(RaytraceData data, int x, int y, View screen) {
 Vec Raytrace(World world, Vec dir) {
     const float eps = 0.01;
     Vec center = {(float) world.width/2, (float) world.height/2, (float) world.depth/2};
-    Vec pos = vec_add(center, world.camera.pos);
-    while(IsInWorld(world, pos)) {
-        Block* block = GetBlockAt(world, pos);
-        if (block->type != BlockType::AIR)
-            return pos;
+    Vec point = vec_add(center, world.camera.pos);
+    while(IsInWorld(world, point)) {
+        Block* block = GetBlockAt(world, point);
+        if (block->type != BlockType::TRANSLUCENT)
+            return point;
 
-        float dist = VoxelDistance(pos.x, dir.x, eps);
-        dist = min(VoxelDistance(pos.y, dir.y, eps), dist);
-        dist = min(VoxelDistance(pos.z, dir.z, eps), dist);
-        pos = vec_add(pos, vec_scale(dir, dist+eps));
+        float dist = VoxelDistance(point, dir, eps);
+        point = vec_add(point, vec_scale(dir, dist+eps));
     }
 
-    return pos;
+    return point;
 }
 
 Vec PolarToCartesian(Vec angles) {
@@ -64,10 +67,8 @@ RaytraceData BeginRaytrace(Camera camera, View screen) {
     Vec right = normalize(vec_cross(forward, {0, 0, 1}));
     Vec up = normalize(vec_cross(right, forward));
 
-    float halfVFov = screen.fov/2;
-    float halfHFov = atan(tan(halfVFov)*screen.aspect_ratio);
-    float halfWidth = tan(halfHFov);
-    float halfHeight = tan(halfVFov);
+    float halfHeight = tan(screen.fov/2);
+    float halfWidth = halfHeight*screen.aspect_ratio;
 
     RaytraceData data;
     data.top_left = vec_add(forward, vec_scale(right, -halfWidth));
